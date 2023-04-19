@@ -1,0 +1,128 @@
+import json
+
+import requests
+from bs4 import BeautifulSoup
+
+base_url = 'https://www.expats.cz'
+url = 'https://www.expats.cz/praguerealestate/apartments/for-rent/prague-region'
+
+try:
+    response = requests.get(url)
+    response.raise_for_status() # raise an exception if there was an HTTP error
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    # print(soup)
+
+    # Find all the apartment links on the page
+    apartment_links = soup.select('div.list a')
+    # print(apartment_links)
+    print(len(apartment_links))
+
+    # Extract the information for each apartment
+    results = []
+    for link in apartment_links:
+        apartment_url = base_url + link['href']
+        print(apartment_url)
+        apartment_response = requests.get(apartment_url)
+        apartment_response.raise_for_status()
+        apartment_soup = BeautifulSoup(apartment_response.text, 'html.parser')
+        print(apartment_soup)
+
+        # soup = apartment_soup
+        # data = {}
+        # data["offer_type"] = "rent"
+        # data["property_type"] = soup.find("h1").text.strip()
+        # data["title"] = soup.find("h1").text.strip()
+        # data["description"] = soup.find("div", {"class": "description"}).text.strip()
+        # data["area"] = ""
+        # data["measurement"] = ""
+        # data["price"] = soup.find("span", {"class": "price"}).text.strip()
+        # data["currency"] = "CZK"
+        # data["lat"] = ""
+        # data["lon"] = ""
+        # data["rooms"] = soup.find("div", {"class": "room"}).text.strip()
+        # data["bathrooms"] = ""
+        # data["address"] = soup.find("div", {"class": "location"}).text.strip()
+        # data["country_code"] = ""
+        # data["name"] = ""
+        # data["email"] = ""
+        # data["phone"] = ""
+        # data["agency"] = ""
+        # data["imgs_urls"] = [img["src"] for img in soup.find_all("img", {"class": "img-responsive"})]
+        # print(data)
+
+        script_data = json.loads(apartment_soup.find('script', type="application/ld+json").string)
+        print(script_data)
+        table_data = {}
+        tables = apartment_soup.findAll('table')
+        for table in tables:
+            rows = table.findAll('tr')
+            for r in rows:
+                c = r.findAll('td')
+                table_data[c[0].text] = c[1].text
+        print(table_data)
+
+        # Get the title, ID, and price
+        title = apartment_soup.find('title').text.strip()
+        source_id = apartment_soup.find('div', {'class': 'seller'}).find('a')['data-advert-id']
+        price = script_data['price'].strip()
+
+        # Get the offer and property type
+        # offer_type, property_type = apartment_soup.find('div', {'class': 'label'}).text.strip().split('\n')
+        offer_type = "rent"
+        property_type = script_data["category"].split()[0]
+
+        # Get the description, area, and measurement (if available)
+        description = script_data["description"]
+
+        # Get the number of rooms and bathrooms (if available)
+        rooms, bathrooms = '', ''
+        details = apartment_soup.find('div', {'class': 'info'}).text.strip().split('\n')
+        for detail in details:
+            if 'Rooms' in detail:
+                rooms = detail
+            elif 'Bathrooms' in detail:
+                bathrooms = detail
+
+        # Get the address and country code
+        address = apartment_soup.find('address', {'class': 'address'}).text.strip()
+        country_code = address.split(',')[-1].strip()
+
+        # Get the latitude and longitude (if available)
+        lat, lon = '', ''
+        map_link = apartment_soup.find('a', {'class': 'mapLink'})
+        if map_link is not None:
+            lat, lon = map_link['href'].split('/')[-2:]
+
+        # Store the information in a dictionary and append to results list
+        results.append({
+            'id': table_data["Offer ID"],
+            'source_id': source_id,
+            'offer_type': offer_type,
+            'property_type': property_type,
+            'title': title,
+            'description': description,
+            'area': table_data["Usable area"],
+            'measurement': script_data["width"] + "*" + script_data["height"],
+            'price': price,
+            'currency': 'CZK', # assuming all prices are in Czech koruna
+            'lat': lat,
+            'lon': lon,
+            'rooms': rooms,
+            'bathrooms': bathrooms,
+            'address': address,
+            'country_code': country_code,
+            'name': script_data["seller"]["name"],
+            'email': script_data["seller"]["email"],
+            'phone': script_data["seller"]["telephone"],
+            'agency': script_data["seller"]["name"],
+            'imgs_urls': [] # images not included in the original web page
+        })
+
+        break
+
+    # Print the results
+    print(results)
+
+except requests.exceptions.HTTPError as e:
+    print(f'Request failed with status code')
